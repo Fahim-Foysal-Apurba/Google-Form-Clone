@@ -1,7 +1,7 @@
 const express=require('express');
 const app=express();
 const bodyParser = require('body-parser');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const session = require('express-session');
 const getConnection=require('./db');
 const con= getConnection();
