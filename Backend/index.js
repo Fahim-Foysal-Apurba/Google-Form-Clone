@@ -1,5 +1,6 @@
 const express=require('express');
 const app=express();
+const PgSession = require("connect-pg-simple")(session);
 const bodyParser = require('body-parser');
 const bcrypt = require('bcryptjs');
 const session = require('express-session');
@@ -21,7 +22,8 @@ con.connect().then(()=>{
 app.use(bodyParser.json());
 app.use(
     session({
-        secret: 'your_secret_key',
+        store: new PgSession({ pool }),
+        secret: 'foysal',
         resave: false,
         saveUninitialized: true,
         cookie: { secure: false } // Use `true` if using HTTPS
