@@ -10,7 +10,7 @@ const port = 5000;
 // Middleware
 app.use(express.json());
 app.use(cors({
-    origin: 'ffa-form.netlify.app',  
+    origin: 'https://ffa-form.netlify.app',  
     credentials: true  
 }));
 
