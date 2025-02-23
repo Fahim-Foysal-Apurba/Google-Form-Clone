@@ -1,56 +1,48 @@
-const express=require('express');
-const app=express();
+const express = require('express');
+const app = express();
 const bodyParser = require('body-parser');
 const bcrypt = require('bcryptjs');
 const session = require('express-session');
-const PgSession = require("connect-pg-simple")(session);
-const getConnection=require('./db');
-const con= getConnection();
-const cors= require('cors');
-const port=5000;
+const pool = require('./db'); // Import single DB connection pool
+const cors = require('cors');
+const port = 5000;
 
-//middleware
+// Middleware
 app.use(express.json());
-app.use(cors());
+app.use(cors({
+    origin: 'ffa-form.netlify.app',  
+    credentials: true  
+}));
 
-con.connect().then(()=>{
-    console.log("Connected Foysal")
-})
-
-//ROUTES
-//create a TODO
 app.use(bodyParser.json());
+
+// Setup session with in-memory store 
 app.use(
     session({
-        store: new PgSession({ con }),
         secret: 'foysal',
         resave: false,
-        saveUninitialized: true,
-        cookie: { secure: false } // Use `true` if using HTTPS
+        saveUninitialized: false, 
+        cookie: { secure: false, httpOnly: true, maxAge: 24 * 60 * 60 * 1000 } // 1-day expiry
     })
 );
 
-// Register 
+// Register User
 app.post('/addUser', async (req, res) => {
     try {
         const { user_name, email, password } = req.body;
 
-        // Check if the email already exists
         const ecq = 'SELECT * FROM users WHERE email = $1';
-        const ecr = await con.query(ecq, [email]);
+        const ecr = await pool.query(ecq, [email]);
 
         if (ecr.rows.length > 0) {
             return res.status(400).json({ message: 'Email already exists' });
         }
 
-        // Encrypt the password
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // Insert user into the database
         const iq = 'INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING *';
-        const iqr = await con.query(iq, [user_name, email, hashedPassword]);
+        const iqr = await pool.query(iq, [user_name, email, hashedPassword]);
 
-        // Create session
         req.session.user = {
             id: iqr.rows[0].id,
             name: iqr.rows[0].name,
@@ -66,126 +58,333 @@ app.post('/addUser', async (req, res) => {
     }
 });
 
+// Login
+app.post('/login', async (req, res) => {
+    try {
+        const { email1, password1 } = req.body;
+        const q = "SELECT * FROM users WHERE email = $1";
+        const qr = await pool.query(q, [email1]);
 
-//Login
-app.post('/login', async(req, res)=>{
-    try{
-
-        const {email1, password1}= req.body;
-        const q="Select * from users where email=($1)"
-
-        const qr=await con.query(q, [email1]);
-
-        if(qr.rows.length === 0 || qr.rows[0].deleted_at !== null){
-
-           return res.status(404).json({message: "This email is not registered!"})           
-        } 
-        if (await bcrypt.compare(password1, qr.rows[0].password)===false){
-            return res.status(404).json({message: "Wrong Password", user: req.session.user});
-        } 
-        if(qr.rows[0].block_status===true){
-            return res.status(404).json({message: "Your account is blocked!"});
+        if (qr.rows.length === 0 || qr.rows[0].deleted_at !== null) {
+            return res.status(404).json({ message: "This email is not registered!" });
         }
-        
-        // create session 
 
-        req.session.user ={
+        const isPasswordCorrect = await bcrypt.compare(password1, qr.rows[0].password);
+        if (!isPasswordCorrect) {
+            return res.status(401).json({ message: "Wrong Password" });
+        }
+
+        if (qr.rows[0].block_status === true) {
+            return res.status(403).json({ message: "Your account is blocked!" });
+        }
+
+        // Create session
+        req.session.user = {
             id: qr.rows[0].id,
             name: qr.rows[0].name,
             email: qr.rows[0].email,
             mode: qr.rows[0].mode,
-            role: qr.rows[0].role,
-            deleted_at: qr.rows[0].deleted_at
-
+            role: qr.rows[0].role
         };
-        if(qr.rows[0].deleted_at === null){
-            return res.status(403).json({message: "Login Successfully", user: req.session.user});}
-          
 
-    }catch(err){
-        res.status(500).json({message: "server error"})
+        return res.status(200).json({ message: "Login Successful", user: req.session.user });
+
+    } catch (err) {
+        console.error("Login Error:", err);
+        res.status(500).json({ message: "Server error" });
     }
-})
+});
 
-
-app.get("/getUsers", async (req, res)=>{
-    try{
-        const q="Select * from users"
-        await con.query(q, (err, result)=>{
-            if(err){
-                res.send(err.message)
-            }else{
-                console.log(result.rows)
-                res.send(result.rows)
-            }
-        })
-
-    }catch(err){
-        res.send(err.message)
-    }
-})
-
-//get a todo
-
-app.get("/getaData/:id", async (req, res)=>{
-
-    try{
-        const{ id }= req.params;
-        const q="Select * from todo where id=($1)"
-        await con.query(q, [id], (err, result)=>{
-            if(err){
-                res.send(err.message)
-            }else{
-                console.log(result.rows)
-                res.send(result.rows)
-            }
-        })
-
-    }catch(err){
-        res.send(err.message)
-    }
-})
-
-//update a todo 
-//app.use(express.json()); // Ensure JSON parsing middleware is in place
-app.put('/update/:id', async(req, res)=>{
-
-    try{
-    const { id }= req.params;
-    const { data } = req.body;
-    const q = "UPDATE todo SET description = $1 WHERE id = $2 RETURNING *";
-    await con.query(q, [data, id], (err, result)=>{
-        if(err){
-            res.send(err.message)
-        }else{
-            console.log(result.rows[0]);
-            res.send(result.rows[0]);
+// Logout
+app.post('/logout', (req, res) => {
+    req.session.destroy((err) => {
+        if (err) {
+            return res.status(500).json({ message: 'Logout failed' });
         }
-    })
+        res.clearCookie('connect.sid'); // Clear session cookie
+        return res.status(200).json({ message: 'Logged out successfully' });
+    });
+});
 
-
-    }catch(err){
-        console.log(err.message)
+// Get Users
+app.get("/getUsers", async (req, res) => {
+    try {
+        const q = "SELECT * FROM users WHERE deleted_at IS NULL";
+        const result = await pool.query(q);
+        res.json(result.rows);
+    } catch (err) {
+        console.error("Error fetching users:", err);
+        res.status(500).json({ message: "Server error" });
     }
-    
-})
+});
 
-//delete a todo
+// Get user info
+app.get("/getUserInfo/:id", async (req, res) => {
+    try {
+        const { id } = req.params;
+        const q = "SELECT * FROM users WHERE id = $1";
+        const result = await pool.query(q, [id]);
 
-app.delete("/delete/:id", async(req, res)=>{
-    const {id}= req.params;
-    const q = "Delete from todo WHERE id= $1"
+        return res.json(result.rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ message: "Server error" });
+    }
+});
 
-    await con.query(q, [id], (err, result)=>{
-        if(err){
-            res.send(err.message)
-        }else{
-            res.send("Deleted!")
+// Update a user's details
+app.put('/update/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { data } = req.body;
+        const q = "UPDATE users SET name = $1 WHERE id = $2 RETURNING *";
+        const result = await pool.query(q, [data, id]);
+        res.json(result.rows[0]);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// Block User
+app.put('/block/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const q = "UPDATE users SET block_status = true WHERE id = $1 RETURNING *";
+        const result = await pool.query(q, [id]);
+        res.json(result.rows[0]);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// Unblock User
+app.put('/unblock/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const q = "UPDATE users SET block_status = false WHERE id = $1 RETURNING *";
+        const result = await pool.query(q, [id]);
+        res.json(result.rows[0]);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// Promote to Admin
+app.put('/addAdmin/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const q = "UPDATE users SET role = 'admin' WHERE id = $1 RETURNING *";
+        const result = await pool.query(q, [id]);
+        res.json(result.rows[0]);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// remove admin
+app.put('/removeAdmin/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const q = "UPDATE users SET role= 'user' WHERE id = $1 RETURNING *";
+        const result = await pool.query(q, [id]);
+        res.json(result.rows[0]);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+// Update mode to Light
+app.put('/updateModeLight/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        console.log("Received request to update light mode for ID:", id);
+
+        const q = "UPDATE users SET mode = false WHERE id = $1 RETURNING *"; 
+        const result = await pool.query(q, [id]);
+
+        console.log("Update result:", result.rows);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: "User not found" });
         }
-    })
 
-})
+        res.json(result.rows[0]);
+    } catch (err) {
+        console.error("Error in updateModeLight:", err.message);
+        res.status(500).json({ message: "Server error" });
+    }
+});
 
-app.listen(port, ()=> {
-    console.log("server is running in http://localhost:"+ port);
-})
+// Update mode to Dark
+app.put('/updateModeDark/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        console.log("Received request to update dark mode for ID:", id);
+
+        const q = "UPDATE users SET mode = true WHERE id = $1 RETURNING *"; 
+        const result = await pool.query(q, [id]);
+
+        console.log("Update result:", result.rows);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        res.json(result.rows[0]);
+    } catch (err) {
+        console.error("Error in updateModeDark:", err.message);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+
+
+// Soft Delete User
+app.delete("/delete/:id", async (req, res) => {
+    try {
+        const { id } = req.params;
+        const q = "UPDATE users SET deleted_at = NOW() WHERE id = $1 RETURNING *";
+        const result = await pool.query(q, [id]);
+        res.json({ message: "User deleted!", user: result.rows[0] });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+app.post('/getUsers/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const q = "SELECT * FROM users WHERE id = $1";
+        const result = await pool.query(q, [id]);
+        res.json(result.rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+
+
+
+////////////////////
+
+///form apis
+// Create a new form with questions
+app.post("/forms", async (req, res) => {
+    try {
+      const { title, questions, id } = req.body;
+  
+      // Insert the form
+      const formResult = await pool.query(
+        "INSERT INTO forms (user_id, title) VALUES ($1, $2) RETURNING id",
+        [id, title]
+      );
+      const formId = formResult.rows[0].id;
+  
+      // Insert questions
+      const questionQueries = questions.map((q) =>
+        pool.query(
+          "INSERT INTO questions (form_id, question_data) VALUES ($1, $2)",
+          [formId, q]
+        )
+      );
+      await Promise.all(questionQueries);
+  
+      res.status(201).json({ message: "Form created successfully!", formId });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Server error" });
+    }
+  });
+  
+  // Get all forms
+  app.get("/getforms", async (req, res) => {
+    try {
+      const result = await pool.query("SELECT * FROM forms");
+      res.json(result.rows);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Server error" });
+    }
+  });
+  
+  // Get a single form with questions
+  app.get("/forms/:id", async (req, res) => {
+    try {
+      const form_Id = parseInt(req.params.id); // Convert ID to an integer
+  
+      if (isNaN(form_Id)) {
+        return res.status(400).json({ error: "Invalid form ID" });
+      }
+  
+      // Get form details
+      const formResult = await pool.query("SELECT * FROM forms WHERE id = $1", [
+        form_Id,
+      ]);
+  
+      if (formResult.rows.length === 0) {
+        return res.status(404).json({ error: "Form not found" });
+      }
+  
+      // Get questions related to the form
+      const questionsResult = await pool.query(
+        "SELECT id, question_data FROM questions WHERE form_id = $1",
+        [form_Id]
+      );
+  
+      res.json({
+        form: formResult.rows[0],
+        questions: questionsResult.rows.map((q) => ({
+          id: q.id,
+          ...q.question_data, // Assuming question_data is stored as JSONB
+        })),
+      });
+    } catch (err) {
+      console.error("Error fetching form:", err);
+      res.status(500).json({ error: "Server error" });
+    }
+  });
+
+
+  
+  app.post("/answers", async (req, res) => {
+    try {
+      const { form_id, answers } = req.body; // answers = [{ questionId, answer }]
+      
+      if (!Array.isArray(answers) || !answers.length) {
+        return res.status(400).json({ error: "No answers provided" });
+      }
+  
+      // Ensure answers are properly formatted as JSONB
+      const query = "INSERT INTO answers (form_id, question_id, answer_data) VALUES ($1, $2, $3)";
+      for (const ans of answers) {
+        const { questionId, answer } = ans;
+  
+        if (!questionId || typeof answer === 'undefined' || answer === null) {
+          continue; // Skip invalid answers
+        }
+        const answerJson = JSON.stringify(answer); 
+        await pool.query(query, [form_id, questionId, answerJson]);
+      }
+  
+      res.status(201).json({ message: "Answers submitted successfully" });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Error submitting answers" });
+    }
+  });
+  
+  
+  
+  
+
+
+app.listen(port, () => {
+    console.log("Server is running on https://google-form-clone-wck5.onrender.com");
+});
+
+
