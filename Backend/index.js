@@ -10,7 +10,7 @@ const port = 5000;
 // Middleware
 app.use(express.json());
 app.use(cors({
-    origin: 'https://ffa-form.netlify.app',  
+    origin: 'https://ffa-form.netlify.app/',  
     credentials: true  
 }));
 
@@ -377,6 +377,48 @@ app.post("/forms", async (req, res) => {
       res.status(500).json({ error: "Error submitting answers" });
     }
   });
+
+  // Update a form with new title or questions
+  app.put("/forms/:id", async (req, res) => {
+    try {
+        const formId = parseInt(req.params.id);
+        const { title, questions } = req.body;
+
+        if (isNaN(formId)) {
+            return res.status(400).json({ error: "Invalid form ID" });
+        }
+
+        // Update the form title
+        await pool.query(
+            "UPDATE forms SET title = $1 WHERE id = $2",
+            [title, formId]
+        );
+
+        // Loop through questions and update or insert them
+        for (const q of questions) {
+            if (q.id) {
+                // If question ID exists, update it
+                await pool.query(
+                    "UPDATE questions SET question_data = $1 WHERE id = $2 AND form_id = $3",
+                    [q, q.id, formId]
+                );
+            } else {
+                // If no ID, it's a new question, insert it
+                await pool.query(
+                    "INSERT INTO questions (form_id, question_data) VALUES ($1, $2)",
+                    [formId, q]
+                );
+            }
+        }
+
+        res.json({ message: "Form updated successfully!" });
+    } catch (err) {
+        console.error("Error updating form:", err);
+        res.status(500).json({ error: "Server error" });
+    }
+});
+
+
   
   
   
