@@ -3,7 +3,7 @@ const app = express();
 const bodyParser = require('body-parser');
 const bcrypt = require('bcryptjs');
 const session = require('express-session');
-const pool = require('./db'); // Import single DB connection pool
+const pool = require('./db'); 
 const cors = require('cors');
 const port = 5000;
 
@@ -16,13 +16,13 @@ app.use(cors({
 
 app.use(bodyParser.json());
 
-// Setup session with in-memory store 
+
 app.use(
     session({
         secret: 'foysal',
         resave: false,
         saveUninitialized: false, 
-        cookie: { secure: false, httpOnly: true, maxAge: 24 * 60 * 60 * 1000 } // 1-day expiry
+        cookie: { secure: false, httpOnly: true, maxAge: 24 * 60 * 60 * 1000 } 
     })
 );
 
@@ -78,6 +78,9 @@ app.post('/login', async (req, res) => {
             return res.status(403).json({ message: "Your account is blocked!" });
         }
 
+        const qry="Update users SET updated_at = now() WHERE email= $1"
+        await pool.query(qry, [email1])
+
         // Create session
         req.session.user = {
             id: qr.rows[0].id,
@@ -132,6 +135,19 @@ app.get("/getUserInfo/:id", async (req, res) => {
     }
 });
 
+app.post("/getUserInfo", async (req, res) => {
+    try {
+        const { id } = req.body;
+        const q = "SELECT * FROM users WHERE id = $1";
+        const result = await pool.query(q, [id]);
+
+        return res.json(result.rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
 // Update a user's details
 app.put('/update/:id', async (req, res) => {
     try {
@@ -145,6 +161,25 @@ app.put('/update/:id', async (req, res) => {
         res.status(500).json({ message: "Server error" });
     }
 });
+
+
+app.post('/updateName', async(req, res)=>{
+
+    try{
+        const {id, user_name}= req.body
+
+        const q= "UPDATE users SET name = $1 WHERE id = $2 RETURNING *"
+    
+        const result = await pool.query(q, [user_name, id]);
+        return res.json(result.rows[0]);
+    }catch(err){
+        console.log(err.message)
+        res.status(500).json({message: "Database Error"})
+    }
+
+
+
+})
 
 // Block User
 app.put('/block/:id', async (req, res) => {
@@ -201,7 +236,6 @@ app.put('/removeAdmin/:id', async (req, res) => {
 app.put('/updateModeLight/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        console.log("Received request to update light mode for ID:", id);
 
         const q = "UPDATE users SET mode = false WHERE id = $1 RETURNING *"; 
         const result = await pool.query(q, [id]);
@@ -353,13 +387,20 @@ app.post("/forms", async (req, res) => {
   
   app.post("/answers", async (req, res) => {
     try {
-      const { form_id, answers } = req.body; // answers = [{ questionId, answer }]
+      const { name, email, password, form_id, answers } = req.body; // answers = [{ questionId, answer }]
+
+      const q="Select email from users WHERE email=$1"
+      const rep=await pool.query(q, [email])
       
-      if (!Array.isArray(answers) || !answers.length) {
-        return res.status(400).json({ error: "No answers provided" });
+      if(rep.rows.length===0){
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const que="Insert Into users (name, email, password) VALUES ($1, $2, $3)";
+
+        await pool.query(que, [name, email, hashedPassword])
       }
   
-      // Ensure answers are properly formatted as JSONB
+      // formatted as JSONB
       const query = "INSERT INTO answers (form_id, question_id, answer_data) VALUES ($1, $2, $3)";
       for (const ans of answers) {
         const { questionId, answer } = ans;
@@ -419,14 +460,158 @@ app.post("/forms", async (req, res) => {
 });
 
 
-  
-  
-  
-  
+app.post('/deleteUser', async (req, res)=>{
+
+    try{
+
+        const {selectedItems}=req.body;
+
+        const q=`DELETE FROM users WHERE id = ANY($1::int[])`
+
+        const result= await pool.query(q, [selectedItems])
+
+        if (result.rowCount > 0) {
+            return res.status(200).json({ message: `${result.rowCount} users deleted successfully` });
+          } else {
+            return res.status(404).json({ message: "No users found with the provided IDs" });
+          }
+
+    }catch(err){
+        console.error(err.message)
+    }
+
+})
+
+app.post('/blockUser', async (req, res)=>{
+
+    try{
+        const {selectedItems}=req.body
+        const q=`Update users SET block_status= true where id = ANY($1::int[])`
+        const result= await pool.query(q,[selectedItems])
+
+        if (result.rowCount > 0) {
+            return res.status(200).json({ message: `${result.rowCount} users deleted successfully` });
+          } else {
+            return res.status(404).json({ message: "No users found with the provided IDs" });
+          }
+
+
+
+
+    }catch(err){
+        console.error(err.message)
+    }
+
+})
+
+app.post('/unBlockUser', async (req, res)=>{
+
+    try{
+
+        const {selectedItems}= req.body
+        const q=`Update users SET block_status= false Where id= ANY($1::int[])`
+        const result= await pool.query(q, [selectedItems])
+        
+        if (result.rowCount > 0) {
+            return res.status(200).json({ message: `${result.rowCount} users deleted successfully` });
+          } else {
+            return res.status(404).json({ message: "No users found with the provided IDs" });
+          }
+
+
+
+    }catch(err){
+         
+        console.error(err.message)
+    }
+
+})
+
+//add Admin
+app.post('/addAdmin', async (req, res)=>{
+
+    try{
+
+        const {selectedItems}= req.body
+        const q=`Update users SET role= 'admin' Where id= ANY($1::int[])`
+        const result= await pool.query(q, [selectedItems])
+        
+        if (result.rowCount > 0) {
+            return res.status(200).json({ message: `${result.rowCount} users deleted successfully` });
+          } else {
+            return res.status(404).json({ message: "No users found with the provided IDs" });
+          }
+
+
+
+    }catch(err){
+         
+        console.error(err.message)
+    }
+
+})
+
+//add Admin
+app.post('/removeAdmin', async (req, res)=>{
+
+    try{
+
+        const {selectedItems}= req.body
+        const q=`Update users SET role= 'user' Where id= ANY($1::int[])`
+        const result= await pool.query(q, [selectedItems])
+        
+        if (result.rowCount > 0) {
+            return res.status(200).json({ message: `${result.rowCount} users deleted successfully` });
+          } else {
+            return res.status(404).json({ message: "No users found with the provided IDs" });
+          }
+
+
+
+    }catch(err){
+         
+        console.error(err.message)
+    }
+
+})
+
+
+
+app.post('/deleteForm', async (req, res)=>{
+
+
+    try{
+        const {formId}= req.body;
+
+        const q="DELETE FROM forms WHERE id = $1 Returning *"
+        
+        const result = await pool.query(q, [formId])
+        return res.json(result.rows[0])
+
+    }catch(err){
+        console.error(err.message)
+    }
+
+})
+
+app.post('/userInformation', async(req, res)=>{
+
+    try{
+
+        const {id}=req.body;
+        const q='Select * From users WHERE id=$1'
+        const result=pool.query(q,[id])
+    
+        return res.json(result.rows[0])
+
+    }catch(err){
+        console.error(err.message)
+    }
+})
 
 
 app.listen(port, () => {
-    console.log("Server is running on https://google-form-clone-wck5.onrender.com");
+    console.log("http://localhost:"+port);
 });
 
 
