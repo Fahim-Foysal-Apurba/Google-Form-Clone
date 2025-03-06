@@ -1,10 +1,14 @@
 const express = require('express');
+const app = express();
+const bodyParser = require('body-parser');
+const bcrypt = require('bcryptjs');
 const session = require('express-session');
+const pool = require('./db'); 
+const cors = require('cors');
+const port = 5000;
 const axios = require('axios');
 const cors = require('cors');
 
-const app = express();
-const port = 5000;
 
 // Middleware
 app.use(express.json());
@@ -12,6 +16,7 @@ app.use(cors({
     origin: 'https://ffa-form.netlify.app',
     credentials: true
 }));
+app.use(bodyParser.json());
 
 app.use(session({
     secret: 'foysal',
