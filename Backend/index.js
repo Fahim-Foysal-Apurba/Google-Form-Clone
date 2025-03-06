@@ -30,7 +30,7 @@ const SALESFORCE_CLIENT_ID = '3MVG9dAEux2v1sLvXd6k01hOFrye_dr8gzZFOUArLnSl072UAc
 const SALESFORCE_CLIENT_SECRET = 'ECC460D86657767D3674656FD2D7116AB889CA8FA1BBCBB6AE56AE231A12C9C1';
 const SALESFORCE_USERNAME = 'fahim.apurba@northsouth.edu';
 const SALESFORCE_PASSWORD = 'IloveCSE1@';
-const SALESFORCE_REDIRECT_URI = 'http://localhost:5000/oauth/callback';  // Adjust this URL based on your actual URL
+const SALESFORCE_REDIRECT_URI = 'https://google-form-clone-wck5.onrender.com/oauth/callback';  // Adjust this URL based on your actual URL
 const SALESFORCE_AUTH_URL = "https://login.salesforce.com/services/oauth2/token";
 
 // Salesforce OAuth callback to exchange code for access token
