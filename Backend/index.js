@@ -10,33 +10,33 @@ const axios = require('axios');
 
 
 
-// Salesforce credentials (hardcoded)
+// Salesforce OAuth credentials
 const SALESFORCE_CLIENT_ID = '3MVG9dAEux2v1sLvXd6k01hOFrye_dr8gzZFOUArLnSl072UAcfIPYcAOakrrBQydLfMdwPFCEqdR4kD4azYw';
 const SALESFORCE_CLIENT_SECRET = 'ECC460D86657767D3674656FD2D7116AB889CA8FA1BBCBB6AE56AE231A12C9C1';
-const SALESFORCE_REDIRECT_URI = 'https://ffa-form.netlify.app/oauth/callback';  // Your actual redirect URI
-const SALESFORCE_AUTH_URL = "https://login.salesforce.com/services/oauth2/token";
+const SALESFORCE_REDIRECT_URI = 'https://ffa-form.netlify.app/oauth/callback';
+const SALESFORCE_AUTH_URL = 'https://login.salesforce.com/services/oauth2/token';
 
-// Middleware
-app.use(express.json());
 app.use(cors({
-    origin: 'https://ffa-form.netlify.app',  // Adjust with your frontend URL
+    origin: 'https://ffa-form.netlify.app',
     credentials: true
 }));
+
 app.use(bodyParser.json());
 
+// Session handling
 app.use(session({
-    secret: 'foysal',  // Use a more secure secret in production
+    secret: 'salesforce_oauth_secret',
     resave: false,
     saveUninitialized: false,
-    cookie: { secure: false, httpOnly: true, maxAge: 24 * 60 * 60 * 1000 }  // Set secure to true in production with HTTPS
+    cookie: { secure: false, httpOnly: true, maxAge: 24 * 60 * 60 * 1000 }
 }));
 
-// Salesforce OAuth callback to exchange code for access token
+// Salesforce OAuth callback route
 app.get('/oauth/callback', async (req, res) => {
     const { code } = req.query;
 
     if (!code) {
-        return res.status(400).json({ message: "Authorization code is missing" });
+        return res.status(400).json({ message: 'Authorization code is missing' });
     }
 
     try {
@@ -49,25 +49,19 @@ app.get('/oauth/callback', async (req, res) => {
         }), { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
 
         const { access_token, instance_url, refresh_token } = response.data;
-
         req.session.salesforce = { access_token, refresh_token, instance_url };
 
         res.redirect('https://ffa-form.netlify.app/profile?auth=success');
     } catch (err) {
-        console.error("Salesforce OAuth Error:", err.response ? err.response.data : err);
+        console.error("Salesforce OAuth Error:", err);
         res.redirect('https://ffa-form.netlify.app/profile?auth=failure');
     }
 });
 
-// Create Salesforce Account with linked Contact
+// Create Salesforce Account and Contact
 app.post('/createSalesforceAccount', async (req, res) => {
     try {
         const { name, email, phone } = req.body;
-
-        // Input validation (basic checks)
-        if (!name || !email || !phone) {
-            return res.status(400).json({ message: 'Name, email, and phone are required' });
-        }
 
         if (!req.session.salesforce) {
             return res.status(401).json({ message: 'Salesforce session not found' });
@@ -75,7 +69,7 @@ app.post('/createSalesforceAccount', async (req, res) => {
 
         const { access_token, instance_url } = req.session.salesforce;
 
-        // Create Account in Salesforce
+        // Create Account
         const accountResponse = await axios.post(
             `${instance_url}/services/data/v58.0/sobjects/Account/`,
             { Name: name, Phone: phone },
@@ -84,7 +78,7 @@ app.post('/createSalesforceAccount', async (req, res) => {
 
         const accountId = accountResponse.data.id;
 
-        // Create Contact linked to Account
+        // Create Contact
         const contactResponse = await axios.post(
             `${instance_url}/services/data/v58.0/sobjects/Contact/`,
             {
@@ -98,9 +92,13 @@ app.post('/createSalesforceAccount', async (req, res) => {
 
         res.status(201).json({ message: 'Account and Contact created in Salesforce', contactId: contactResponse.data.id });
     } catch (err) {
-        console.error("Error creating Salesforce Account or Contact:", err.response ? err.response.data : err);
+        console.error("Error creating Salesforce Account or Contact:", err);
         res.status(500).json({ message: 'Error creating Salesforce Account or Contact' });
     }
+});
+
+app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
 });
 
 
