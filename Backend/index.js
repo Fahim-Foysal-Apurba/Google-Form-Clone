@@ -17,29 +17,30 @@ const SALESFORCE_REDIRECT_URI = 'https://ffa-form.netlify.app/oauth/callback';
 const SALESFORCE_AUTH_URL = 'https://login.salesforce.com/services/oauth2/token';
 
 app.use(cors({
-    origin: 'https://ffa-form.netlify.app',
+    origin: 'https://ffa-form.netlify.app', // Allow frontend requests from Netlify
     credentials: true
 }));
 
 app.use(bodyParser.json());
 
-// Session handling
+// Session handling for user login state
 app.use(session({
     secret: 'salesforce_oauth_secret',
     resave: false,
     saveUninitialized: false,
-    cookie: { secure: false, httpOnly: true, maxAge: 24 * 60 * 60 * 1000 }
+    cookie: { secure: false, httpOnly: true, maxAge: 24 * 60 * 60 * 1000 } // Set session expiry to 1 day
 }));
 
 // Salesforce OAuth callback route
 app.get('/oauth/callback', async (req, res) => {
-    const { code } = req.query;
+    const { code, state } = req.query;
 
     if (!code) {
         return res.status(400).json({ message: 'Authorization code is missing' });
     }
 
     try {
+        // Exchange authorization code for access token
         const response = await axios.post(SALESFORCE_AUTH_URL, new URLSearchParams({
             grant_type: 'authorization_code',
             code,
@@ -51,10 +52,11 @@ app.get('/oauth/callback', async (req, res) => {
         const { access_token, instance_url, refresh_token } = response.data;
         req.session.salesforce = { access_token, refresh_token, instance_url };
 
-        res.redirect('https://ffa-form.netlify.app/profile?auth=success');
+        // Redirect to profile page after successful login
+        res.redirect(`https://ffa-form.netlify.app/profile?auth=success`);
     } catch (err) {
         console.error("Salesforce OAuth Error:", err);
-        res.redirect('https://ffa-form.netlify.app/profile?auth=failure');
+        res.redirect(`https://ffa-form.netlify.app/profile?auth=failure`);
     }
 });
 
@@ -82,20 +84,24 @@ app.post('/createSalesforceAccount', async (req, res) => {
         const contactResponse = await axios.post(
             `${instance_url}/services/data/v58.0/sobjects/Contact/`,
             {
-                FirstName: name.split(" ")[0],
-                LastName: name.split(" ")[1] || "User",
+                FirstName: name.split(" ")[0], // Assuming name has a first and last name
+                LastName: name.split(" ")[1] || "User", // Default to "User" if last name is not provided
                 Email: email,
-                AccountId: accountId
+                AccountId: accountId // Link contact to the newly created account
             },
             { headers: { Authorization: `Bearer ${access_token}`, 'Content-Type': 'application/json' } }
         );
 
+        // Respond with success and the contact ID
         res.status(201).json({ message: 'Account and Contact created in Salesforce', contactId: contactResponse.data.id });
     } catch (err) {
         console.error("Error creating Salesforce Account or Contact:", err);
         res.status(500).json({ message: 'Error creating Salesforce Account or Contact' });
     }
 });
+
+
+
 
 
 
