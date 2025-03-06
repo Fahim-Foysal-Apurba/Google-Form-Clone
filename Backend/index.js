@@ -13,8 +13,10 @@ const axios = require("axios");
 
 const router = express.Router();
 
-const SALESFORCE_CLIENT_ID = process.env.REACT_APP_SALESFORCE_CLIENT_ID;
-const SALESFORCE_CLIENT_SECRET = process.env.REACT_APP_SALESFORCE_CLIENT_SECRET;
+const SALESFORCE_CLIENT_ID="3MVG9dAEux2v1sLvXd6k01hOFrye_dr8gzZFOUArLnSl072UAcfIPYcAOakrrBQydLfMdwPFCEqdR4kD4azYw"
+const SALESFORCE_CLIENT_SECRET="ECC460D86657767D3674656FD2D7116AB889CA8FA1BBCBB6AE56AE231A12C9C1"
+const SALESFORCE_USERNAME= "fahim.apurba@northsouth.edu"
+const SALESFORCE_PASSWORD="IloveCSE1@"
 const SALESFORCE_REDIRECT_URI = "http://localhost:3000/oauth/callback";
 const SALESFORCE_AUTH_URL = "https://login.salesforce.com/services/oauth2/token";
 const SALESFORCE_API_BASE = "https://your-instance.salesforce.com/services/data/v58.0"
