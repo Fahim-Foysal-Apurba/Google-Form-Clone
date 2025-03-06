@@ -7,7 +7,7 @@ const pool = require('./db');
 const cors = require('cors');
 const port = 5000;
 const axios = require('axios');
-const cors = require('cors');
+
 
 
 // Middleware
