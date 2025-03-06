@@ -1,117 +1,89 @@
 const express = require('express');
-const app = express();
-const bodyParser = require('body-parser');
-const bcrypt = require('bcryptjs');
 const session = require('express-session');
-const pool = require('./db'); 
+const axios = require('axios');
 const cors = require('cors');
-const port = 5000;
 require('dotenv').config();
 
-///////Salesforce////////
-const axios = require("axios"); 
-
-const router = express.Router();
-
-const SALESFORCE_CLIENT_ID="3MVG9dAEux2v1sLvXd6k01hOFrye_dr8gzZFOUArLnSl072UAcfIPYcAOakrrBQydLfMdwPFCEqdR4kD4azYw"
-const SALESFORCE_CLIENT_SECRET="ECC460D86657767D3674656FD2D7116AB889CA8FA1BBCBB6AE56AE231A12C9C1"
-const SALESFORCE_USERNAME= "fahim.apurba@northsouth.edu"
-const SALESFORCE_PASSWORD="IloveCSE1@"
-const SALESFORCE_REDIRECT_URI = "http://localhost:3000/oauth/callback";
-const SALESFORCE_AUTH_URL = "https://login.salesforce.com/services/oauth2/token";
-const SALESFORCE_API_BASE = "https://your-instance.salesforce.com/services/data/v58.0"
+const app = express();
+const port = 5000;
 
 // Middleware
 app.use(express.json());
 app.use(cors({
-    origin: 'https://ffa-form.netlify.app',  
-    credentials: true  
+    origin: 'https://ffa-form.netlify.app',
+    credentials: true
 }));
 
-app.use(bodyParser.json());
+app.use(session({
+    secret: 'foysal',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: false, httpOnly: true, maxAge: 24 * 60 * 60 * 1000 }
+}));
 
+const SALESFORCE_CLIENT_ID = process.env.SALESFORCE_CLIENT_ID;
+const SALESFORCE_CLIENT_SECRET = process.env.SALESFORCE_CLIENT_SECRET;
+const SALESFORCE_REDIRECT_URI = process.env.SALESFORCE_REDIRECT_URI;
+const SALESFORCE_AUTH_URL = "https://login.salesforce.com/services/oauth2/token";
 
-app.use(
-    session({
-        secret: 'foysal',
-        resave: false,
-        saveUninitialized: false, 
-        cookie: { secure: false, httpOnly: true, maxAge: 24 * 60 * 60 * 1000 } 
-    })
-);
-
-
-// Salesforce OAuth callback route to get access token
+// Salesforce OAuth callback to exchange code for access token
 app.get('/oauth/callback', async (req, res) => {
     const { code } = req.query;
-    
+
+    if (!code) {
+        return res.status(400).json({ message: "Authorization code is missing" });
+    }
+
     try {
-        const response = await axios.post(SALESFORCE_AUTH_URL, null, {
-            params: {
-                grant_type: 'authorization_code',
-                code: code,
-                client_id: SALESFORCE_CLIENT_ID,
-                client_secret: SALESFORCE_CLIENT_SECRET,
-                redirect_uri: SALESFORCE_REDIRECT_URI,
-            },
-        });
+        const response = await axios.post(SALESFORCE_AUTH_URL, new URLSearchParams({
+            grant_type: 'authorization_code',
+            code,
+            client_id: SALESFORCE_CLIENT_ID,
+            client_secret: SALESFORCE_CLIENT_SECRET,
+            redirect_uri: SALESFORCE_REDIRECT_URI,
+        }), { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
 
-        const { access_token, refresh_token, instance_url } = response.data;
+        const { access_token, instance_url, refresh_token } = response.data;
 
-        // Store these tokens for future use
         req.session.salesforce = { access_token, refresh_token, instance_url };
 
-        res.redirect('/profile'); // Redirect to your profile page or wherever
+        res.redirect('https://ffa-form.netlify.app/profile?auth=success');
     } catch (err) {
         console.error("Salesforce OAuth Error:", err);
-        res.status(500).json({ message: "Salesforce authentication failed" });
+        res.redirect('https://ffa-form.netlify.app/profile?auth=failure');
     }
 });
 
-//a Salesforce Account with linked Contact
+// Create Salesforce Account with linked Contact
 app.post('/createSalesforceAccount', async (req, res) => {
     try {
         const { name, email, phone } = req.body;
 
-        // Ensure Salesforce tokens are available
         if (!req.session.salesforce) {
             return res.status(401).json({ message: 'Salesforce session not found' });
         }
 
         const { access_token, instance_url } = req.session.salesforce;
 
-        // Create a new Account in Salesforce
+        // Create Account
         const accountResponse = await axios.post(
             `${instance_url}/services/data/v58.0/sobjects/Account/`,
-            {
-                Name: name,
-                Phone: phone,
-            },
-            {
-                headers: {
-                    Authorization: `Bearer ${access_token}`,
-                    'Content-Type': 'application/json',
-                },
-            }
+            { Name: name, Phone: phone },
+            { headers: { Authorization: `Bearer ${access_token}`, 'Content-Type': 'application/json' } }
         );
 
         const accountId = accountResponse.data.id;
 
-        // Create a linked Contact in Salesforce
+        // Create Contact
         const contactResponse = await axios.post(
             `${instance_url}/services/data/v58.0/sobjects/Contact/`,
             {
-                FirstName: name.split(" ")[0], // Assuming name is in "First Last" format
-                LastName: name.split(" ")[1],
+                FirstName: name.split(" ")[0],
+                LastName: name.split(" ")[1] || "User",
                 Email: email,
-                AccountId: accountId,
+                AccountId: accountId
             },
-            {
-                headers: {
-                    Authorization: `Bearer ${access_token}`,
-                    'Content-Type': 'application/json',
-                },
-            }
+            { headers: { Authorization: `Bearer ${access_token}`, 'Content-Type': 'application/json' } }
         );
 
         res.status(201).json({ message: 'Account and Contact created in Salesforce', contactId: contactResponse.data.id });
@@ -120,6 +92,8 @@ app.post('/createSalesforceAccount', async (req, res) => {
         res.status(500).json({ message: 'Error creating Salesforce Account or Contact' });
     }
 });
+
+
 
 
 // Register User
