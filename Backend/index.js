@@ -10,28 +10,26 @@ const axios = require('axios');
 
 
 
+// Salesforce credentials (hardcoded)
+const SALESFORCE_CLIENT_ID = '3MVG9dAEux2v1sLvXd6k01hOFrye_dr8gzZFOUArLnSl072UAcfIPYcAOakrrBQydLfMdwPFCEqdR4kD4azYw';
+const SALESFORCE_CLIENT_SECRET = 'ECC460D86657767D3674656FD2D7116AB889CA8FA1BBCBB6AE56AE231A12C9C1';
+const SALESFORCE_REDIRECT_URI = 'https://ffa-form.netlify.app/oauth/callback';  // Your actual redirect URI
+const SALESFORCE_AUTH_URL = "https://login.salesforce.com/services/oauth2/token";
+
 // Middleware
 app.use(express.json());
 app.use(cors({
-    origin: 'https://ffa-form.netlify.app',
+    origin: 'https://ffa-form.netlify.app',  // Adjust with your frontend URL
     credentials: true
 }));
 app.use(bodyParser.json());
 
 app.use(session({
-    secret: 'foysal',
+    secret: 'foysal',  // Use a more secure secret in production
     resave: false,
     saveUninitialized: false,
-    cookie: { secure: false, httpOnly: true, maxAge: 24 * 60 * 60 * 1000 }
+    cookie: { secure: false, httpOnly: true, maxAge: 24 * 60 * 60 * 1000 }  // Set secure to true in production with HTTPS
 }));
-
-// Salesforce credentials (hardcoded)
-const SALESFORCE_CLIENT_ID = '3MVG9dAEux2v1sLvXd6k01hOFrye_dr8gzZFOUArLnSl072UAcfIPYcAOakrrBQydLfMdwPFCEqdR4kD4azYw';
-const SALESFORCE_CLIENT_SECRET = 'ECC460D86657767D3674656FD2D7116AB889CA8FA1BBCBB6AE56AE231A12C9C1';
-const SALESFORCE_USERNAME = 'fahim.apurba@northsouth.edu';
-const SALESFORCE_PASSWORD = 'IloveCSE1@';
-const SALESFORCE_REDIRECT_URI = 'https://google-form-clone-wck5.onrender.com/oauth/callback';  // Adjust this URL based on your actual URL
-const SALESFORCE_AUTH_URL = "https://login.salesforce.com/services/oauth2/token";
 
 // Salesforce OAuth callback to exchange code for access token
 app.get('/oauth/callback', async (req, res) => {
@@ -56,7 +54,7 @@ app.get('/oauth/callback', async (req, res) => {
 
         res.redirect('https://ffa-form.netlify.app/profile?auth=success');
     } catch (err) {
-        console.error("Salesforce OAuth Error:", err);
+        console.error("Salesforce OAuth Error:", err.response ? err.response.data : err);
         res.redirect('https://ffa-form.netlify.app/profile?auth=failure');
     }
 });
@@ -66,13 +64,18 @@ app.post('/createSalesforceAccount', async (req, res) => {
     try {
         const { name, email, phone } = req.body;
 
+        // Input validation (basic checks)
+        if (!name || !email || !phone) {
+            return res.status(400).json({ message: 'Name, email, and phone are required' });
+        }
+
         if (!req.session.salesforce) {
             return res.status(401).json({ message: 'Salesforce session not found' });
         }
 
         const { access_token, instance_url } = req.session.salesforce;
 
-        // Create Account
+        // Create Account in Salesforce
         const accountResponse = await axios.post(
             `${instance_url}/services/data/v58.0/sobjects/Account/`,
             { Name: name, Phone: phone },
@@ -81,7 +84,7 @@ app.post('/createSalesforceAccount', async (req, res) => {
 
         const accountId = accountResponse.data.id;
 
-        // Create Contact
+        // Create Contact linked to Account
         const contactResponse = await axios.post(
             `${instance_url}/services/data/v58.0/sobjects/Contact/`,
             {
@@ -95,10 +98,11 @@ app.post('/createSalesforceAccount', async (req, res) => {
 
         res.status(201).json({ message: 'Account and Contact created in Salesforce', contactId: contactResponse.data.id });
     } catch (err) {
-        console.error("Error creating Salesforce Account or Contact:", err);
+        console.error("Error creating Salesforce Account or Contact:", err.response ? err.response.data : err);
         res.status(500).json({ message: 'Error creating Salesforce Account or Contact' });
     }
 });
+
 
 
 
