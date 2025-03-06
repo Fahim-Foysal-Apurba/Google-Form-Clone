@@ -2,7 +2,6 @@ const express = require('express');
 const session = require('express-session');
 const axios = require('axios');
 const cors = require('cors');
-require('dotenv').config();
 
 const app = express();
 const port = 5000;
@@ -21,9 +20,12 @@ app.use(session({
     cookie: { secure: false, httpOnly: true, maxAge: 24 * 60 * 60 * 1000 }
 }));
 
-const SALESFORCE_CLIENT_ID = process.env.SALESFORCE_CLIENT_ID;
-const SALESFORCE_CLIENT_SECRET = process.env.SALESFORCE_CLIENT_SECRET;
-const SALESFORCE_REDIRECT_URI = process.env.SALESFORCE_REDIRECT_URI;
+// Salesforce credentials (hardcoded)
+const SALESFORCE_CLIENT_ID = '3MVG9dAEux2v1sLvXd6k01hOFrye_dr8gzZFOUArLnSl072UAcfIPYcAOakrrBQydLfMdwPFCEqdR4kD4azYw';
+const SALESFORCE_CLIENT_SECRET = 'ECC460D86657767D3674656FD2D7116AB889CA8FA1BBCBB6AE56AE231A12C9C1';
+const SALESFORCE_USERNAME = 'fahim.apurba@northsouth.edu';
+const SALESFORCE_PASSWORD = 'IloveCSE1@';
+const SALESFORCE_REDIRECT_URI = 'http://localhost:5000/oauth/callback';  // Adjust this URL based on your actual URL
 const SALESFORCE_AUTH_URL = "https://login.salesforce.com/services/oauth2/token";
 
 // Salesforce OAuth callback to exchange code for access token
@@ -92,6 +94,8 @@ app.post('/createSalesforceAccount', async (req, res) => {
         res.status(500).json({ message: 'Error creating Salesforce Account or Contact' });
     }
 });
+
+
 
 
 
